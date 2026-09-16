@@ -25,7 +25,11 @@ band, entered on the close back through the inner band, exited at the middle ban
 
 Each rule is stated in full, entry and exit, at the top of `backtest.ipynb`.
 
-## Running
+## Performance
+
+![Capital](capital.png)
+
+## Reproducing
 
 Python 3.13 and Jupyter. No compiled dependencies.
 
@@ -35,7 +39,3 @@ jupyter lab backtest.ipynb
 ```
 
 `backtest.ipynb` reports one table and one trade list per rule, plus a single capital graph carrying all four against holding the index. The modules under `src/` are a python library, and prices come from Yahoo Finance.
-
-## Capital
-
-![Capital](capital.png)
