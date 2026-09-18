@@ -1,4 +1,4 @@
-# Technical Analysis Backtests
+# Technical Analysis Backtest
 
 A short technical analysis backtest.
 
