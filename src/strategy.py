@@ -1,11 +1,4 @@
-"""Signal rules, transcribed from the original notebooks.
-
-Two crossover conventions are in use and both are kept. state_crossover holds an
-indicator of state, one while the fast line is above the slow line and zero
-otherwise, and trades its first difference. macd_signal takes the sign of the
-first difference of the sign of the spread, which fires plus or minus one on the
-crossing day only.
-"""
+"""Signals and positions of the four rules."""
 import numpy as np
 import pandas as pd
 
@@ -25,74 +18,62 @@ def ema_state(close, spans=config.EMA_SPANS):
 
 
 def trailing_stop(close, signal, width):
-    """Percentage trailing stop, transcribed from get_trailing_stop.
-
-    width is the stop distance in per cent. signal is plus one to go long, minus
-    one to go short and zero otherwise.
-    """
+    """Trailing stop at width percent (one value or one per day); signal +1 long, -1 short."""
     n = len(close)
     long_, short_ = np.zeros(n, bool), np.zeros(n, bool)
-    level, exit_ = np.zeros(n), np.zeros(n)
+    level = np.zeros(n)
     price, sig = close.to_numpy(float), np.asarray(signal, float)
+    w = np.broadcast_to(np.asarray(width, float), n)
+    below, above = 1 - w / 100, 1 + w / 100
     for i in range(n):
         if sig[i] == 1:
             long_[i:], short_[i:] = True, False
-            level[i:] = price[i] * (1 - width / 100)
+            level[i:] = price[i] * below[i]
         elif sig[i] == -1:
             short_[i:], long_[i:] = True, False
-            level[i:] = price[i] * (1 + width / 100)
+            level[i:] = price[i] * above[i]
         else:
-            if long_[i] and price[i] * (1 - width / 100) > level[i]:
-                level[i:] = price[i] * (1 - width / 100)
-            elif short_[i] and price[i] * (1 + width / 100) < level[i]:
-                level[i:] = price[i] * (1 + width / 100)
+            if long_[i] and price[i] * below[i] > level[i]:
+                level[i:] = price[i] * below[i]
+            elif short_[i] and price[i] * above[i] < level[i]:
+                level[i:] = price[i] * above[i]
             if long_[i] and price[i] < level[i]:
-                exit_[i], long_[i:] = -1, False
+                long_[i:] = False
             elif short_[i] and price[i] > level[i]:
-                exit_[i], short_[i:] = 1, False
+                short_[i:] = False
     return pd.DataFrame({"trailing_stop": level, "long": long_, "short": short_},
                         index=close.index)
 
 
-def carry(long_entry, long_exit, short_entry, short_exit):
-    """Hold a position from entry until its exit, transcribed from TA_function.
+def _held(entry, exit_):
+    """One from an entry to the next exit; on a day with both, the exit wins."""
+    entry, exit_ = np.asarray(entry), np.asarray(exit_)
+    held = np.zeros(len(entry))
+    for i in range(len(entry)):
+        if entry[i] == 1:
+            held[i:] = 1
+        if exit_[i] == 1:
+            held[i:] = 0
+    return held
 
-    The two tests are independent rather than exclusive, so on a day that both
-    enters and exits the exit wins, which is the original's ordering.
-    """
-    n = len(long_entry)
-    long_, short_ = np.zeros(n), np.zeros(n)
-    le, lx = np.asarray(long_entry), np.asarray(long_exit)
-    se, sx = np.asarray(short_entry), np.asarray(short_exit)
-    for i in range(n):
-        if le[i] == 1:
-            long_[i:] = 1
-        if lx[i] == 1:
-            long_[i:] = 0
-    for i in range(n):
-        if se[i] == 1:
-            short_[i:] = -1
-        if sx[i] == 1:
-            short_[i:] = 0
-    return pd.Series(long_ + short_, index=getattr(long_entry, "index", None))
+
+def carry(long_entry, long_exit, short_entry, short_exit):
+    """Long leg minus short leg, each held from its entry to its exit."""
+    return pd.Series(_held(long_entry, long_exit) - _held(short_entry, short_exit),
+                     index=long_entry.index)
 
 
 def macd_signal(close, spans=config.MACD_SPANS):
-    """Plus one where the histogram crosses up through zero, minus one down."""
-    histogram = ind.macd(close, spans)
-    return np.sign(np.sign(histogram).diff())
+    """+1 where the histogram crosses up through zero (g_t = +2), -1 where it crosses down."""
+    g = np.sign(ind.macd(close, spans)).diff()
+    return np.sign(g).where(g.abs() == 2, 0.0)
 
 
 def confirmation(close, high, low, volume,
                  rsi_period=config.RSI_PERIOD, rsi_ma=config.RSI_MA_PERIOD,
                  adx_period=config.ADX_PERIOD, adx_ma=config.ADX_MA_PERIOD,
                  spans=config.MACD_SPANS):
-    """RSI, VWAP and ADX agreement, gated on the MACD histogram and the day's return.
-
-    The original also vetoed any day carrying a doji, a dragonfly doji or a
-    gravestone doji. That veto is dropped, so this rule takes trades the
-    notebooks suppressed and its results do not reproduce theirs.
-    """
+    """RSI, VWAP and ADX agreement, gated on MACD and the day's return; doji veto dropped."""
     rsi = ind.rsi(close, rsi_period)
     adx = ind.adx(high, low, close, adx_period)
     benchmark = adx.rolling(adx_ma).mean() - adx.rolling(adx_ma).std()
@@ -105,59 +86,41 @@ def confirmation(close, high, low, volume,
 
     change = np.sign(close / close.shift(1) - 1)
     momentum = np.sign(histogram.diff())
-    long_entry = pd.Series(np.where((momentum == 1) & (change == 1) & (total == 3), 1, 0),
-                           index=close.index)
-    short_entry = pd.Series(np.where((momentum == -1) & (change == -1) & (total == -3), 1, 0),
-                            index=close.index)
-    long_exit = np.where(c_vwap == -1, 1, np.where(c_adx == -1, 1, 0))
-    short_exit = np.where(c_vwap == 1, 1, np.where(c_adx == 1, 1, 0))
+    long_entry = (momentum == 1) & (change == 1) & (total == 3)
+    short_entry = (momentum == -1) & (change == -1) & (total == -3)
+    long_exit = (c_vwap == -1) | (c_adx == -1)
+    short_exit = (c_vwap == 1) | (c_adx == 1)
     return carry(long_entry, long_exit, short_entry, short_exit)
+
+
+def _crossover(a, b):
+    """True on the days a crosses above b, that is, b crosses below a."""
+    return (a > b) & (a.shift(1) <= b.shift(1))
+
+
+def _entries(arm, trigger):
+    """One on the first trigger day once armed; entering disarms."""
+    entry, armed = np.zeros(len(arm), int), False
+    for i in range(len(arm)):
+        if arm.iloc[i]:
+            armed = True
+        if armed and trigger.iloc[i]:
+            entry[i], armed = 1, False
+    return pd.Series(entry, index=arm.index)
 
 
 def bollinger_reversion(close, period=config.BB_PERIOD,
                         inner=config.BB_INNER, outer=config.BB_OUTER):
-    """Range bounded double Bollinger rule, constructed rather than transcribed.
-
-    The source notebook computes the bands and a pair of potential signals and
-    stops there, with no entry, exit or backtest. The rule below is built from
-    its markdown: arm once price closes outside the outer band, enter on the
-    close back through the inner band, exit at the middle band. The exit is a
-    choice, not something the source states.
-    """
+    """Double Bollinger rule; the source states no exit, so the middle band exit is a choice."""
     lower_outer, _, upper_outer = ind.bollinger(close, period, outer)
     lower_inner, middle, upper_inner = ind.bollinger(close, period, inner)
-
-    below = close < lower_outer
-    above = close > upper_outer
-    cross_up = (close > lower_inner) & (close.shift(1) <= lower_inner.shift(1))
-    cross_down = (close < upper_inner) & (close.shift(1) >= upper_inner.shift(1))
-
-    n = len(close)
-    le, se = np.zeros(n, int), np.zeros(n, int)
-    armed_long = armed_short = False
-    for i in range(n):
-        if below.iloc[i]:
-            armed_long = True
-        if above.iloc[i]:
-            armed_short = True
-        if armed_long and cross_up.iloc[i]:
-            le[i], armed_long = 1, False
-        if armed_short and cross_down.iloc[i]:
-            se[i], armed_short = 1, False
-    long_entry = pd.Series(le, index=close.index)
-    short_entry = pd.Series(se, index=close.index)
-    long_exit = ((close > middle) & (close.shift(1) <= middle.shift(1))).astype(int)
-    short_exit = ((close < middle) & (close.shift(1) >= middle.shift(1))).astype(int)
+    long_entry = _entries(close < lower_outer, _crossover(close, lower_inner))
+    short_entry = _entries(close > upper_outer, _crossover(upper_inner, close))
+    long_exit, short_exit = _crossover(close, middle), _crossover(middle, close)
     return carry(long_entry, long_exit, short_entry, short_exit)
 
 
 def stop_width(close):
-    """Trailing stop width in per cent, transcribed from the MACD notebooks.
-
-    The width is the absolute mean plus the standard deviation of the daily
-    return, measured on close.shift(-1) / close - 1 over the whole sample. Both
-    the forward shift and the use of the full sample look past the day the stop
-    is set. This is the original's definition and is kept.
-    """
-    forward = (close.shift(-1) / close - 1) * 100
-    return abs(forward.mean()) + forward.std(ddof=1)
+    """Trailing stop width w_t of rule 2 in percent, from the daily returns up to day t."""
+    r = (close / close.shift(1) - 1) * 100
+    return abs(r.expanding().mean()) + r.expanding().std()

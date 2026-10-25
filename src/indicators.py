@@ -1,16 +1,4 @@
-"""Indicators, transcribed from the notebooks without changing any definition.
-
-Three of them depart from the textbook form. The departures are the working
-code's own and are preserved here rather than corrected.
-
-    rsi     averages gains and losses with a simple moving average, not with
-            Wilder's smoothing, so this is Cutler's RSI and will not agree with
-            the conventional form.
-    macd    returns the histogram, the MACD line minus its signal line, which
-            the notebooks store in a column named MACD.
-    vwap    accumulates from the first row of the sample rather than resetting,
-            so on daily data it is an expanding mean price, not a session VWAP.
-"""
+"""Indicators of the four rules."""
 import numpy as np
 import pandas as pd
 
@@ -22,13 +10,14 @@ def ema(close, span):
 
 
 def macd(close, spans=config.MACD_SPANS):
-    """The MACD histogram, as the notebooks define it."""
+    """The MACD histogram: the MACD line minus its signal line."""
     fast_span, slow_span, signal_span = spans
     line = ema(close, fast_span) - ema(close, slow_span)
     return line - ema(line, signal_span)
 
 
 def rsi(close, period=config.RSI_PERIOD):
+    """Cutler's RSI: simple averages of gains and losses, not Wilder's smoothing."""
     delta = close.diff()
     up, down = delta.copy(), delta.copy()
     up[up < 0] = 0
@@ -39,6 +28,7 @@ def rsi(close, period=config.RSI_PERIOD):
 
 
 def vwap(close, volume):
+    """Volume weighted close accumulated from the first row, not a session VWAP."""
     return (close * volume).cumsum() / volume.cumsum()
 
 
@@ -50,7 +40,7 @@ def bollinger(close, period=config.BB_PERIOD, deviations=1.0):
 
 
 def adx(high, low, close, period=config.ADX_PERIOD):
-    """Wilder's directional index."""
+    """ADX with the DIs from rolling sums, not Wilder's smoothing."""
     up = high.diff()
     down = -low.diff()
     plus_dm = pd.Series(np.where((up > down) & (up > 0), up, 0.0), index=high.index)
