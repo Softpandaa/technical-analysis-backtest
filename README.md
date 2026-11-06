@@ -1,6 +1,6 @@
 # Technical Analysis Backtest
 
-A short technical analysis backtest.
+Four technical trading rules, an EMA crossover, a MACD crossover, an RSI, VWAP and ADX confirmation rule and a double Bollinger band reversion, backtested on 20 equity indices, index futures and ETFs from January 2015 to September 2026, each against holding the same index.
 
 ## Layout
 
@@ -9,33 +9,32 @@ src/            Python modules, every parameter declared once in config.py
 backtest.ipynb  the four rules, their tables, trades and the capital graph
 capital.png     the capital graph, written by the notebook
 ```
+
 ## Strategies
 
-**EMA crossover.** Long only. Enter when the fast average crosses above the slow one, exit on the
-opposite cross or on the five per cent stop.
+**EMA crossover.** Long only. Enter when the 21-day average crosses above the 50-day one, and exit on the opposite cross or on the 5% stop.
 
-**MACD crossover.** Long and short. Enter when the MACD histogram crosses zero, either way, exit on
-the trailing stop.
+**MACD crossover.** Long and short. Enter when the MACD histogram crosses zero, either way, and exit on the trailing stop.
 
-**RSI, VWAP and ADX.** Long and short. Enter when the histogram is rising, the day is up and RSI,
-VWAP and ADX all confirm, exit when the VWAP or the ADX condition turns.
+**RSI, VWAP and ADX.** Long and short. Enter when the histogram is rising, the day is up and RSI, VWAP and ADX all confirm, and exit when the VWAP or the ADX condition turns.
 
-**Double Bollinger, range bounded.** Long and short. Armed when the close goes outside the outer
-band, entered on the close back through the inner band, exited at the middle band.
+**Double Bollinger, range bounded.** Long and short. Armed when the close leaves the outer band, entered on the close back through the inner band, and exited at the middle band.
 
 Each rule is stated in full, entry and exit, at the top of `backtest.ipynb`.
 
 ## Performance
 
+Capital of the four rules against holding the S&P 500, gross of transaction costs.
+
 ![Capital](capital.png)
 
 ## Reproducing
 
-Python 3.13 and Jupyter. No compiled dependencies.
+Python 3.13 and Jupyter.
 
 ```
 pip install -r requirements.txt
 jupyter lab backtest.ipynb
 ```
 
-`backtest.ipynb` reports one table and one trade list per rule, plus a single capital graph carrying all four against holding the index. The modules under `src/` are a python library, and prices come from Yahoo Finance.
+The notebook downloads daily prices from Yahoo Finance and reports one table and one trade list per rule, plus the capital graph.
